@@ -3,14 +3,21 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 
+import 'ads.dart';
 import 'game.dart';
+import 'game_audio.dart';
 import 'remove_ads_purchase.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-  runApp(const TabuleiroInfantilAventuraApp());
+  final ads = GoogleAdsController();
+  await ads.initialize();
+  runApp(
+    TabuleiroInfantilAventuraApp(ads: ads, audio: AssetGameAudioController()),
+  );
 }
 
 const playerColors = <Color>[Color(0xFF1685E9), Color(0xFFE83F91)];
@@ -24,14 +31,15 @@ const _adventureRed = Color(0xFFED513F);
 const _selectionGreen = Color(0xFF168A3B);
 
 enum BoardBackdrop {
-  map1('assets/mapas/mapa_1.png'),
-  map2('assets/mapas/mapa_2.png'),
-  map3('assets/mapas/mapa_3.png'),
-  map4('assets/mapas/mapa_4.png');
+  map1('assets/mapas/mapa_1.png', board20Rules),
+  map2('assets/mapas/mapa_2.png', board30Rules),
+  map3('assets/mapas/mapa_3.png', board40Rules),
+  map4('assets/mapas/mapa_4.png', board50Rules);
 
-  const BoardBackdrop(this.assetPath);
+  const BoardBackdrop(this.assetPath, this.rules);
 
   final String assetPath;
+  final BoardRules rules;
 }
 
 String animalAsset(int index) => 'assets/animals/${animalIds[index]}.gif';
@@ -54,9 +62,16 @@ double animalWalkSwayAtPosition(double position) =>
     sin(pi * 2 * position) * .055;
 
 class TabuleiroInfantilAventuraApp extends StatelessWidget {
-  const TabuleiroInfantilAventuraApp({super.key, this.removeAdsPurchase});
+  const TabuleiroInfantilAventuraApp({
+    super.key,
+    this.removeAdsPurchase,
+    this.ads,
+    this.audio,
+  });
 
   final RemoveAdsPurchaseController? removeAdsPurchase;
+  final GoogleAdsController? ads;
+  final GameAudioController? audio;
 
   @override
   Widget build(BuildContext context) {
@@ -73,7 +88,11 @@ class TabuleiroInfantilAventuraApp extends StatelessWidget {
           fontFamily: 'Roboto',
         ),
       ),
-      home: SetupPage(removeAdsPurchase: removeAdsPurchase),
+      home: SetupPage(
+        removeAdsPurchase: removeAdsPurchase,
+        ads: ads,
+        audio: audio,
+      ),
     );
   }
 }
@@ -220,9 +239,11 @@ class _ForestPainter extends CustomPainter {
 }
 
 class SetupPage extends StatefulWidget {
-  const SetupPage({super.key, this.removeAdsPurchase});
+  const SetupPage({super.key, this.removeAdsPurchase, this.ads, this.audio});
 
   final RemoveAdsPurchaseController? removeAdsPurchase;
+  final GoogleAdsController? ads;
+  final GameAudioController? audio;
 
   @override
   State<SetupPage> createState() => _SetupPageState();
@@ -250,10 +271,18 @@ class _SetupPageState extends State<SetupPage>
     _removeAdsPurchase =
         widget.removeAdsPurchase ?? PlayRemoveAdsPurchaseController();
     _removeAdsPurchase.addListener(_onRemoveAdsPurchaseChanged);
+    widget.ads?.addListener(_onAdsChanged);
     unawaited(_removeAdsPurchase.initialize());
   }
 
   void _onRemoveAdsPurchaseChanged() {
+    if (_removeAdsPurchase.isPurchased) {
+      widget.ads?.hideBanner();
+    }
+    if (mounted) setState(() {});
+  }
+
+  void _onAdsChanged() {
     if (mounted) setState(() {});
   }
 
@@ -285,6 +314,9 @@ class _SetupPageState extends State<SetupPage>
   @override
   void dispose() {
     _removeAdsPurchase.removeListener(_onRemoveAdsPurchaseChanged);
+    widget.ads?.removeListener(_onAdsChanged);
+    widget.ads?.dispose();
+    widget.audio?.dispose();
     if (_ownsRemoveAdsPurchase) _removeAdsPurchase.dispose();
     _animalScrollController.dispose();
     _startButtonPulseController.dispose();
@@ -293,7 +325,19 @@ class _SetupPageState extends State<SetupPage>
 
   @override
   Widget build(BuildContext context) {
+    final banner = _removeAdsPurchase.isPurchased ? null : widget.ads?.banner;
     return Scaffold(
+      bottomNavigationBar: banner == null
+          ? null
+          : SafeArea(
+              top: false,
+              child: SizedBox(
+                key: const ValueKey('admob-banner'),
+                width: banner.size.width.toDouble(),
+                height: banner.size.height.toDouble(),
+                child: AdWidget(ad: banner),
+              ),
+            ),
       body: ForestBackground(
         imageAsset: 'assets/inicial.png',
         child: SafeArea(
@@ -659,16 +703,29 @@ class _SetupPageState extends State<SetupPage>
                       },
                       child: FilledButton.icon(
                         key: const ValueKey('start-game-button'),
-                        onPressed: () => Navigator.push(
-                          context,
-                          MaterialPageRoute<void>(
-                            builder: (_) => GamePage(
-                              mode: _mode,
-                              animals: List<int>.of(_chosen),
-                              backdrop: _backdrop,
-                            ),
-                          ),
-                        ),
+                        onPressed: () {
+                          void openGame() {
+                            if (!context.mounted) return;
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute<void>(
+                                builder: (_) => GamePage(
+                                  mode: _mode,
+                                  animals: List<int>.of(_chosen),
+                                  backdrop: _backdrop,
+                                  audio: widget.audio,
+                                ),
+                              ),
+                            );
+                          }
+
+                          if (_removeAdsPurchase.isPurchased ||
+                              widget.ads == null) {
+                            openGame();
+                          } else {
+                            widget.ads!.showInterstitial(onComplete: openGame);
+                          }
+                        },
                         icon: const Icon(Icons.play_arrow_rounded, size: 26),
                         label: const Text(
                           'COMEÇAR A JOGAR',
@@ -835,7 +892,7 @@ class _BackdropChoice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Semantics(
-    label: 'Cenário ${backdrop.index + 1}',
+    label: 'Cenário ${backdrop.index + 1}, ${backdrop.rules.houseCount} casas',
     selected: selected,
     button: true,
     child: InkWell(
@@ -857,10 +914,33 @@ class _BackdropChoice extends StatelessWidget {
           aspectRatio: 1,
           child: ClipRRect(
             borderRadius: BorderRadius.circular(9),
-            child: Image.asset(
-              backdrop.assetPath,
-              fit: BoxFit.cover,
-              excludeFromSemantics: true,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Image.asset(
+                  backdrop.assetPath,
+                  fit: BoxFit.cover,
+                  excludeFromSemantics: true,
+                ),
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    color: const Color(0xCC123F2D),
+                    child: Text(
+                      '${backdrop.rules.houseCount} casas',
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -876,11 +956,13 @@ class GamePage extends StatefulWidget {
     required this.animals,
     this.backdrop = BoardBackdrop.map1,
     this.random,
+    this.audio,
   });
   final GameMode mode;
   final List<int> animals;
   final BoardBackdrop backdrop;
   final Random? random;
+  final GameAudioController? audio;
 
   @override
   State<GamePage> createState() => _GamePageState();
@@ -911,6 +993,11 @@ class _GamePageState extends State<GamePage>
       vsync: this,
       duration: const Duration(milliseconds: 580),
     );
+    widget.audio?.addListener(_onAudioChanged);
+  }
+
+  void _onAudioChanged() {
+    if (mounted) setState(() {});
   }
 
   void _newGame() {
@@ -918,6 +1005,7 @@ class _GamePageState extends State<GamePage>
       mode: widget.mode,
       playerOneAnimal: widget.animals[0],
       playerTwoAnimal: widget.animals[1],
+      rules: widget.backdrop.rules,
       random: widget.random,
     );
     _displayPositions[0] = 0;
@@ -938,6 +1026,7 @@ class _GamePageState extends State<GamePage>
       _eventDismissed!.complete();
     }
     _diceController.dispose();
+    widget.audio?.removeListener(_onAudioChanged);
     super.dispose();
   }
 
@@ -955,6 +1044,8 @@ class _GamePageState extends State<GamePage>
     }
     final player = _game.currentPlayerIndex;
     final rolled = _game.roll();
+    final audio = widget.audio;
+    if (audio != null) unawaited(audio.playDice());
     setState(() {
       _busy = true;
       _showDice = true;
@@ -982,6 +1073,8 @@ class _GamePageState extends State<GamePage>
       if (!mounted) return;
     }
     if (turn.special != null && turn.winnerIndex == null) {
+      final audio = widget.audio;
+      if (audio != null) unawaited(audio.playSpecial(turn.special!.kind));
       _eventDismissed = Completer<void>();
       setState(() {
         _event = turn.special;
@@ -1000,6 +1093,8 @@ class _GamePageState extends State<GamePage>
       }
     }
     if (turn.winnerIndex != null) {
+      final audio = widget.audio;
+      if (audio != null) unawaited(audio.playVictory());
       setState(() {
         _busy = false;
         _showWinner = true;
@@ -1028,9 +1123,11 @@ class _GamePageState extends State<GamePage>
   }
 
   Future<void> _moveTo(int player, int position) async {
+    final audio = widget.audio;
+    if (audio != null) unawaited(audio.playStep());
     setState(() {
       _displayPositions[player] = position;
-      _status = position == finishPosition
+      _status = position == _game.finishPosition
           ? '${_playerName(player)} chegou à CHEGADA!'
           : '${_playerName(player)} chegou à casa $position';
     });
@@ -1076,7 +1173,21 @@ class _GamePageState extends State<GamePage>
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 48),
+                            if (widget.audio == null)
+                              const SizedBox(width: 48)
+                            else
+                              IconButton(
+                                key: const ValueKey('sound-toggle'),
+                                onPressed: widget.audio!.toggle,
+                                icon: Icon(
+                                  widget.audio!.enabled
+                                      ? Icons.volume_up_rounded
+                                      : Icons.volume_off_rounded,
+                                ),
+                                tooltip: widget.audio!.enabled
+                                    ? 'Desativar som'
+                                    : 'Ativar som',
+                              ),
                           ],
                         ),
                       ),
@@ -1089,6 +1200,7 @@ class _GamePageState extends State<GamePage>
                             status: _status,
                             turnColor: playerColors[current],
                             backdrop: widget.backdrop,
+                            rules: _game.rules,
                           ),
                         ),
                       ),
@@ -1167,12 +1279,14 @@ class _Board extends StatelessWidget {
     required this.status,
     required this.turnColor,
     required this.backdrop,
+    required this.rules,
   });
   final List<int> animals;
   final List<int> positions;
   final String status;
   final Color turnColor;
   final BoardBackdrop backdrop;
+  final BoardRules rules;
 
   static const _startAreaHeight = 70.0;
   static const _startCardHeight = 55.0;
@@ -1192,21 +1306,22 @@ class _Board extends StatelessWidget {
     double boardHeight,
     double roadWidth,
     double finishAreaHeight,
+    int laneCount,
   ) {
     final inset = roadWidth + 12;
     final left = inset;
     final right = width - inset;
     final bottom = boardHeight - _startAreaHeight - roadWidth / 2 - 8;
     final top = finishAreaHeight + roadWidth / 2 + 8;
-    final laneStep = (bottom - top) / 5;
+    final laneStep = (bottom - top) / (laneCount - 1);
     final bend = roadWidth * .64;
     final path = Path()..moveTo(left, bottom);
 
-    for (var lane = 0; lane < 6; lane++) {
+    for (var lane = 0; lane < laneCount; lane++) {
       final y = bottom - lane * laneStep;
       final endX = lane.isEven ? right : left;
       path.lineTo(endX, y);
-      if (lane < 5) {
+      if (lane < laneCount - 1) {
         final bendX = lane.isEven ? right + bend : left - bend;
         final nextY = y - laneStep;
         path.cubicTo(bendX, y, bendX, nextY, endX, nextY);
@@ -1225,15 +1340,23 @@ class _Board extends StatelessWidget {
       final cloudHeight = finishAreaHeight - 3;
       const cloudLeft = 4.0;
       const cloudTop = 4.0;
+      final laneCount = (rules.houseCount / 7).ceil().clamp(4, 8);
       final availableLaneHeight =
-          (boardHeight - finishAreaHeight - _startAreaHeight - 16) / 5;
+          (boardHeight - finishAreaHeight - _startAreaHeight - 16) /
+          (laneCount - 1);
       final roadWidth = min(
         (width * .13).clamp(32.0, 50.0),
         (availableLaneHeight - 9).clamp(28.0, 50.0),
       );
-      final path = _roadPath(width, boardHeight, roadWidth, finishAreaHeight);
+      final path = _roadPath(
+        width,
+        boardHeight,
+        roadWidth,
+        finishAreaHeight,
+        laneCount,
+      );
       final metric = path.computeMetrics().first;
-      final step = metric.length / (finishPosition - 1);
+      final step = metric.length / rules.houseCount;
       final finishCenter = Offset(
         cloudLeft + cloudWidth / 2,
         cloudTop + cloudHeight / 2,
@@ -1269,11 +1392,11 @@ class _Board extends StatelessWidget {
         if (progress < 1) {
           return Offset.lerp(start, onRoad(1, player), progress)!;
         }
-        if (progress > finishPosition - 1) {
+        if (progress > rules.houseCount) {
           return Offset.lerp(
-            onRoad((finishPosition - 1).toDouble(), player),
+            onRoad(rules.houseCount.toDouble(), player),
             finishCenter,
-            (progress - (finishPosition - 1)).clamp(0.0, 1.0),
+            (progress - rules.houseCount).clamp(0.0, 1.0),
           )!;
         }
         return onRoad(progress, player);
@@ -1307,16 +1430,24 @@ class _Board extends StatelessWidget {
               ),
               Positioned.fill(
                 child: CustomPaint(
-                  painter: _RoadPainter(path: path, roadWidth: roadWidth),
+                  painter: _RoadPainter(
+                    path: path,
+                    roadWidth: roadWidth,
+                    rules: rules,
+                  ),
                 ),
               ),
-              for (var number = 1; number < finishPosition; number++)
+              for (var number = 1; number <= rules.houseCount; number++)
                 Positioned(
                   left: houseCenter(number).dx - roadWidth * .38,
                   top: houseCenter(number).dy - roadWidth * .40,
                   width: roadWidth * .76,
                   height: roadWidth * .80,
-                  child: _RoadHouseLabel(number: number, roadWidth: roadWidth),
+                  child: _RoadHouseLabel(
+                    number: number,
+                    roadWidth: roadWidth,
+                    special: rules.specialSpaces[number],
+                  ),
                 ),
               Positioned(
                 left: cloudLeft,
@@ -1440,7 +1571,19 @@ class _Board extends StatelessWidget {
                             child: Transform.rotate(
                               angle: animalWalkSwayAtPosition(progress),
                               child: Transform.flip(
-                                flipX: !animalFacesRightAtPosition(progress),
+                                flipX:
+                                    progress > 0 &&
+                                    progress <= rules.houseCount &&
+                                    metric
+                                            .getTangentForOffset(
+                                              ((progress - .5) * step).clamp(
+                                                0.0,
+                                                metric.length,
+                                              ),
+                                            )!
+                                            .vector
+                                            .dx <
+                                        0,
                                 child: child,
                               ),
                             ),
@@ -1468,13 +1611,18 @@ class _Board extends StatelessWidget {
 }
 
 class _RoadPainter extends CustomPainter {
-  const _RoadPainter({required this.path, required this.roadWidth});
+  const _RoadPainter({
+    required this.path,
+    required this.roadWidth,
+    required this.rules,
+  });
 
   final Path path;
   final double roadWidth;
+  final BoardRules rules;
 
   Color _houseColor(int number) {
-    if (specialSpaces.containsKey(number)) return _specialHouseColor;
+    if (rules.specialSpaces.containsKey(number)) return _specialHouseColor;
     return _Board.houseColors[(number - 1) % _Board.houseColors.length];
   }
 
@@ -1506,8 +1654,8 @@ class _RoadPainter extends CustomPainter {
     );
 
     final metric = path.computeMetrics().first;
-    final step = metric.length / (finishPosition - 1);
-    for (var index = 0; index < finishPosition - 1; index++) {
+    final step = metric.length / rules.houseCount;
+    for (var index = 0; index < rules.houseCount; index++) {
       canvas.drawPath(
         metric.extractPath(
           max(0, index * step - .7),
@@ -1523,13 +1671,15 @@ class _RoadPainter extends CustomPainter {
     canvas.drawCircle(
       metric.getTangentForOffset(metric.length - .01)!.position,
       roadWidth / 2,
-      Paint()..color = _houseColor(finishPosition - 1),
+      Paint()..color = _houseColor(rules.houseCount),
     );
   }
 
   @override
   bool shouldRepaint(covariant _RoadPainter oldDelegate) =>
-      oldDelegate.path != path || oldDelegate.roadWidth != roadWidth;
+      oldDelegate.path != path ||
+      oldDelegate.roadWidth != roadWidth ||
+      oldDelegate.rules != rules;
 }
 
 class _FinishCloud extends StatelessWidget {
@@ -1594,16 +1744,21 @@ class _CloudPainter extends CustomPainter {
 }
 
 class _RoadHouseLabel extends StatelessWidget {
-  const _RoadHouseLabel({required this.number, required this.roadWidth});
+  const _RoadHouseLabel({
+    required this.number,
+    required this.roadWidth,
+    required this.special,
+  });
   final int number;
   final double roadWidth;
+  final SpecialSpace? special;
 
   @override
   Widget build(BuildContext context) {
-    final special = specialSpaces[number];
+    final specialSpace = special;
     return SizedBox(
       key: ValueKey('house-$number'),
-      child: special == null
+      child: specialSpace == null
           ? Center(
               child: Text(
                 '$number',
@@ -1615,11 +1770,11 @@ class _RoadHouseLabel extends StatelessWidget {
               ),
             )
           : Semantics(
-              label: 'Casa $number: ${special.title}',
+              label: 'Casa $number: ${specialSpace.title}',
               excludeSemantics: true,
               child: Center(
                 child: Text(
-                  special.icon,
+                  specialSpace.icon,
                   style: TextStyle(
                     fontSize: (roadWidth * .56).clamp(20.0, 28.0),
                     height: 1,

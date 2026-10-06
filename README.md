@@ -12,7 +12,7 @@ flutter analyze
 flutter build apk --debug
 ```
 
-O tabuleiro cabe inteiro na tela do telefone, sem rolagem. Antes de jogar, é possível escolher por miniatura entre os quatro cenários de `assets/mapas/`. A imagem escolhida aparece atrás da estrada sinuosa, dividida em 40 trechos coloridos numerados. A “CHEGADA” fica fora da estrada, em uma nuvem acima da casa 40, assim como a largada fica separada das casas. O dado mostra uma animação central, para no resultado e permanece visível por 1,5 segundo. O animal passa por cada casa individualmente. As casas 5, 21 e 30 avançam; 11, 25 e 38 fazem voltar; 17 concede outra jogada; 34 tira a próxima vez. Cada casa especial conta uma pequena história em uma cena animada que fica na tela por quatro segundos. Uma barra mostra o tempo restante; depois a cena fecha sozinha e o efeito acontece. Parar na casa 40 não encerra a partida: vence quem passa dela e alcança a “CHEGADA”.
+O tabuleiro cabe inteiro na tela do telefone, sem rolagem. Antes de jogar, é possível escolher por miniatura entre os quatro cenários de `assets/mapas/`. Cada cenário agora é uma aventura própria: o primeiro tem 20 casas, o segundo 30, o terceiro 40 e o quarto 50. A imagem escolhida aparece atrás da estrada sinuosa, que adapta o número de curvas, casas numeradas, chegada e tamanho dos trechos ao mapa selecionado. Cada mapa também possui posições e combinações próprias de bônus, penalidades, rodada extra e perda da vez. Toda casa especial conta uma pequena história em uma cena animada que fica na tela por quatro segundos. Uma barra mostra o tempo restante; depois a cena fecha sozinha e o efeito acontece. A “CHEGADA” fica fora da estrada: vence quem passa pela última casa numerada e alcança a bandeira.
 
 ## Remoção de propagandas
 
@@ -26,7 +26,7 @@ Os dez PNGs originais estão em `art/source/`. Os GIFs de caminhada e as miniatu
 python3 tools/make_gifs.py
 ```
 
-Cada GIF tem 12 quadros em um ciclo de 0,96 segundo, fundo transparente e patas que se movem alternadamente enquanto o corpo permanece no lugar. No tabuleiro, uma estrada sinuosa contínua passa pelas 40 casas; os marcadores seguem suas curvas ao avançar ou voltar.
+Cada GIF tem 12 quadros em um ciclo de 0,96 segundo, fundo transparente e patas que se movem alternadamente enquanto o corpo permanece no lugar. No tabuleiro, uma estrada sinuosa contínua passa por todas as casas do cenário escolhido; os marcadores seguem suas curvas ao avançar ou voltar.
 
 Os PNGs foram criados com a ferramenta integrada de geração de imagens. Prompt base: personagem individual de jogo infantil, animal de corpo inteiro voltado à direita em pose de caminhada, estilo de ilustração colorida de livro infantil, olhos expressivos, silhueta clara, fundo genuinamente transparente, sem cenário, texto ou outros personagens. Sujeitos: cachorro dourado com lenço vermelho; coelho branco; raposa laranja; gato tigrado cinza com coleira azul; esquilo vermelho; filhote de urso marrom; tartaruga verde; porquinho rosa; ouriço marrom; capivara caramelo.
 

@@ -2,11 +2,34 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tabuleiro_infantil_aventura/game.dart';
 
 void main() {
-  AdventureBoardGame newGame() => AdventureBoardGame(
-    mode: GameMode.local,
-    playerOneAnimal: 0,
-    playerTwoAnimal: 1,
-  );
+  AdventureBoardGame newGame({BoardRules rules = board40Rules}) =>
+      AdventureBoardGame(
+        mode: GameMode.local,
+        playerOneAnimal: 0,
+        playerTwoAnimal: 1,
+        rules: rules,
+      );
+
+  test('each board has its own length and special houses', () {
+    const boards = [board20Rules, board30Rules, board40Rules, board50Rules];
+    expect(boards.map((board) => board.houseCount), [20, 30, 40, 50]);
+    expect(
+      boards
+          .map((board) => board.specialSpaces.keys.join(','))
+          .toSet()
+          .length,
+      4,
+    );
+    for (final board in boards) {
+      expect(board.finishPosition, board.houseCount + 1);
+      expect(
+        board.specialSpaces.keys.every(
+          (house) => house > 0 && house <= board.houseCount,
+        ),
+        isTrue,
+      );
+    }
+  });
 
   test('dice movement visits each numbered house and alternates players', () {
     final game = newGame();
@@ -66,7 +89,7 @@ void main() {
     final finish = game.play(1);
     expect(finish.dicePath, [41]);
     expect(finish.winnerIndex, 1);
-    expect(game.players[1].position, finishPosition);
+    expect(game.players[1].position, game.finishPosition);
     expect(() => game.play(1), throwsStateError);
   });
 
@@ -74,8 +97,24 @@ void main() {
     final game = newGame();
     game.players[0].position = 38;
     final result = game.play(5);
-    expect(result.dicePath, [39, 40, finishPosition]);
+    expect(result.dicePath, [39, 40, game.finishPosition]);
     expect(result.winnerIndex, 0);
-    expect(game.players[0].position, finishPosition);
+    expect(game.players[0].position, game.finishPosition);
+  });
+
+  test('finishing position follows the selected board length', () {
+    for (final rules in const [
+      board20Rules,
+      board30Rules,
+      board40Rules,
+      board50Rules,
+    ]) {
+      final game = newGame(rules: rules);
+      game.players[0].position = rules.houseCount - 1;
+      final result = game.play(6);
+      expect(result.winnerIndex, 0);
+      expect(game.players[0].position, rules.finishPosition);
+      expect(result.dicePath.last, rules.finishPosition);
+    }
   });
 }

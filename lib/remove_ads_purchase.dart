@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
-const removeAdsProductId = 'remove_ads';
+const removeAdsProductId = 'remover_ads';
 
 abstract class RemoveAdsPurchaseController extends ChangeNotifier {
   String? get price;
@@ -107,9 +107,7 @@ class PlayRemoveAdsPurchaseController extends RemoveAdsPurchaseController {
     }
   }
 
-  Future<void> _handlePurchaseUpdates(
-    List<PurchaseDetails> purchases,
-  ) async {
+  Future<void> _handlePurchaseUpdates(List<PurchaseDetails> purchases) async {
     for (final purchase in purchases) {
       if (purchase.productID != removeAdsProductId) continue;
 

@@ -3,6 +3,9 @@
         android:label="Tabuleiro infantil: Aventura"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-7960665567498956~8360760146" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
